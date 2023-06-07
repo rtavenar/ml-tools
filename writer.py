@@ -176,7 +176,7 @@ class Writer():
 
     def __init__(self, path, mode="pkl"):
         # We save the folder path
-        self._folder_path = path
+        self._folder_path = os.path.abspath(path)
         # and we create it
         os.makedirs("{}".format(self._folder_path), exist_ok=True)
         # We save the mode of saving the writer files
