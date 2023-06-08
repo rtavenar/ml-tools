@@ -298,6 +298,8 @@ class LaunchConfig():
 
             # We update our params for a given run
             param_ = dict(known_param)
+            param_["run_id"] = self.__run_index
+            param_["job_id"] = int(self.prefix_run_name[4:-1])
             param_.update(dict(zip(param_list.keys(), param)))
 
             # We update the variables for a given run
