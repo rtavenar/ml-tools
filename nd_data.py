@@ -245,7 +245,7 @@ class NDData(Lock):
         # If the index exists
         if(index_name in self.data.index):
 
-            # If erase = "full", we erase all the line associated to the index
+            # If erase = "full", we erase the line associated to the index
             if(erase == "full"):
                 for column in self.data.columns:
                     self.data.at[index_name, column] = np.nan
