@@ -242,10 +242,15 @@ class NDData(Lock):
             # and we rename it in the data
             self.data = self.data.rename(index={old_index: new_index})
 
-        # For all indices
+        # If the index exists
         if(index_name in self.data.index):
 
-            # and for all columns in the dictionary
+            # If erase = "full", we erase the line associated to the index
+            if(erase == "full"):
+                for column in self.data.columns:
+                    self.data.at[index_name, column] = np.nan
+
+            # for all columns in the dictionary
             for column, value in col_dict.items():
 
                 # We create the column in the data if it does not exist
@@ -261,28 +266,31 @@ class NDData(Lock):
                 # We write the value in the right column and index
                 if(np.isnan(self.data.loc[index_name][column])
                    or (not(np.isnan(self.data.loc[index_name][column]))
-                       and erase)):
+                       and (erase == "partial" or erase == "full"))):
                     self.data.at[index_name, column] = value
 
-        # We create the new columns
-        old_set = set(self.data.columns)
-        new_set = set(col_dict.keys())
-        new_column = sorted(list(new_set))
-        new_set = sorted(list(old_set.difference(new_set)))
+        else:
+            # Otherwise, we create the row and insert the values
+            old_set = set(self.data.columns)
+            new_set = set(col_dict.keys())
+            new_column = sorted(list(new_set))
+            new_set = sorted(list(old_set.difference(new_set)))
 
-        for column in new_set:
-            col_dict[column] = np.nan
-        for column in new_column:
-            if column not in self.data:
-                # In order to do
-                # self.data[column] = np.nan,
-                # we execute the following lines to remove a PerformanceWarning
-                data_copy = self.data.copy()
-                data_copy[column] = np.nan
-                self.data = data_copy
+            # We create the new columns
+            for column in new_set:
+                col_dict[column] = np.nan
+            for column in new_column:
+                if column not in self.data:
+                    # In order to do
+                    # self.data[column] = np.nan,
+                    # we execute the following lines
+                    # to remove a PerformanceWarning
+                    data_copy = self.data.copy()
+                    data_copy[column] = np.nan
+                    self.data = data_copy
 
-        # We add the values
-        self.data.loc[index_name] = col_dict
+            # We add the values
+            self.data.loc[index_name] = col_dict
 
         # We save the data
         self._save()
