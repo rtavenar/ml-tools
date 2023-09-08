@@ -22,9 +22,12 @@ import math
 
 class LaunchConfig():
 
-    def __init__(self, f):
+    def __init__(self, f, job_id_list):
         # We set the prefix of the job names (useful for slurm ...)
         self.prefix_run_name = "job_{}_".format(int(time.time()))
+
+        # We save the ids of the jobs to execute
+        self.job_id_list = job_id_list
 
         # We read the configuration file (.ini)
         config = configparser.ConfigParser(empty_lines_in_values=False)
@@ -108,7 +111,7 @@ class LaunchConfig():
 
     def _get_param_list(self, param_list, known_param):
 
-        # We get the params (, the variables and the command...)
+        # We get the params(, the variables and the command...)
         param_list = dict(param_list)
 
         # We remove the command
@@ -313,20 +316,35 @@ class LaunchConfig():
             if(command is not None):
                 # We interpret the command (with the variables)
                 command = self._construct_command(command, var_)
-                # We run the command
-                self._run_command(command, run_name, known_dependency)
+
+                # We run the command if the job id is in the list
+                if(self.job_id_list is None
+                   or self.__run_index in self.job_id_list):
+                    self._run_command(command, run_name, known_dependency)
 
             # For each subtree (of type "[-> someth]")
             for job_subtree in job_tree[3]:
+
+                # We update the dependencies: if the id is in the list, we add
+                # the job id in the dependencies
+                if(self.job_id_list is None
+                   or self.__run_index in self.job_id_list):
+                    new_known_dependency = known_dependency+[run_name]
+                else:
+                    new_known_dependency = known_dependency
+
                 # We run recursively the subtree (and we get the dependency)
                 dependency_ = self._run(
                     job_subtree, job_subtree[2], param_,
-                    var_, known_dependency+[run_name])
-                # We add the new dependences in the list
+                    var_, new_known_dependency)
+                # We add the new dependencies in the list
                 dependency_1 = sorted(list(set(dependency_1 + dependency_)))
 
-            # We add our current run in the (first) dependency list
-            dependency_1.append(run_name)
+            # We add our current run in the (first) dependency list if the job
+            # id is in the list
+            if(self.job_id_list is None
+               or self.__run_index in self.job_id_list):
+                dependency_1.append(run_name)
 
         # We create a second (and final) dependency list
         dependency_2 = list(dependency_1)
@@ -343,7 +361,7 @@ class LaunchConfig():
         return dependency_2
 
     def _run_command(self, command, run_name=None, job_list=None):
-        # To be implemented !
+        # To be implemented!
         raise NotImplementedError
 
 
@@ -377,8 +395,8 @@ class LocalLaunchConfig(LaunchConfig):
 
 class SlurmLaunchConfig(LaunchConfig):
 
-    def __init__(self, f, config):
-        super().__init__(f)
+    def __init__(self, f, job_id_list, config):
+        super().__init__(f, job_id_list)
         self.config = config
 
     def get_job_id(self, run_name):
@@ -467,27 +485,60 @@ if __name__ == "__main__":
     arg_parser.add_argument(
         "--config", metavar="config", default=None, type=str,
         help="The configuration associated with the mode of execution slurm")
+    arg_parser.add_argument(
+        "--job", metavar="job", default=None, type=str,
+        help="The job's id or the job_id_list of the jobs to execute")
 
     arg_list = arg_parser.parse_args()
     mode = arg_list.mode
     path = arg_list.path
     config = arg_list.config
+    job = arg_list.job
+
+    # We create the list of job id to execute
+    job_id_list = None
+    # If the option --job has been selected
+    if(job is not None):
+
+        # We create the list
+        job_id_list = []
+
+        # For each id range/id
+        range_list = job.split(",")
+        for range in range_list:
+
+            # We get the ids in the "range"
+            try:
+                range = range.split(":")
+                range = sorted([int(r) for r in range])
+            except ValueError:
+                arg_parser.error("--job: it is not job ids")
+
+            if(len(range) > 2):
+                arg_parser.error(
+                    "--job: a range must contain 2 values only")
+
+            # We add all the ids in the list
+            if(len(range) == 2):
+                range = np.arange(range[0], range[1]+1).tolist()
+            job_id_list = job_id_list+range
+
+        # We sort the list
+        job_id_list = sorted(job_id_list)
 
     if(mode != "print" and mode != "local" and mode != "slurm"):
-        arg_parser.error("The mode of execution must be"
-                         + " either print, local or slurm")
+        arg_parser.error("mode: it must be either print, local or slurm")
     if(not(os.path.exists(path))):
-        arg_parser.error("The path {} does not exist".format(path))
+        arg_parser.error("path: {} does not exist".format(path))
 
     if(config is not None and (mode == "print" or mode == "local")):
-        arg_parser.error("The option config is only available for"
-                         + " the mode of execution slurm")
+        arg_parser.error("--config: it is only available for the mode slurm")
 
     # ----------------------------------------------------------------------- #
 
     if(mode == "print"):
-        PrintLaunchConfig(path).run()
+        PrintLaunchConfig(path, job_id_list).run()
     elif(mode == "local"):
-        LocalLaunchConfig(path).run()
+        LocalLaunchConfig(path, job_id_list).run()
     elif(mode == "slurm"):
-        SlurmLaunchConfig(path, config).run()
+        SlurmLaunchConfig(path, job_id_list, config).run()
