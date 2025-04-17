@@ -1,4 +1,4 @@
-# Copyright © 2023 Paul Viallard <paul.viallard@gmail.com>
+# Copyright © 2025 Paul Viallard <paul.viallard@gmail.com>
 # This work is free. You can redistribute it and/or modify it under the
 # terms of the Do What The Fuck You Want To Public License, Version 2,
 # as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
@@ -10,6 +10,7 @@ import itertools
 import argparse
 import configparser
 import subprocess
+import time
 import logging
 import glob
 
@@ -47,7 +48,7 @@ class LaunchConfig():
         # We initialize a dict to insert easily in the tree
         job_dict = {None: job_tuple}
 
-        # We initialize the previous node that we seen
+        # We initialize the previous node that we have seen
         prog_previous = None
 
         # For every node of the tree (the sections in the ini file)
@@ -57,7 +58,7 @@ class LaunchConfig():
             job_name_list = job_name.replace(" ", "")
             job_name_list = re.split("(-(?:-|>))", job_name_list)
 
-            # If the section can be rewriten as "[someth]"
+            # If the section can be rewritten as "[someth]"
             if(len(job_name_list) == 1):
 
                 # We initialize the node of the tree with its "data"
@@ -126,7 +127,7 @@ class LaunchConfig():
         for param_name in known_param:
             exec(param_name+" = known_param['"+param_name+"']")
 
-        # We create a todo list (see further)
+        # We create a todo list (see below)
         todo_param_list = {}
 
         # For each params
@@ -156,7 +157,7 @@ class LaunchConfig():
                     if(not(isinstance(param_dict[key], list))):
                         param_dict[key] = [param_dict[key]]
 
-                # We inialize a list
+                # We initialize a list
                 param_str_list = []
                 # For each combination of params in the dict
                 for param in itertools.product(*param_dict.values()):
@@ -272,6 +273,7 @@ class LaunchConfig():
             if(len(todo_param_list) > 0):
                 known_param_ = {
                     key: value for key, value in zip(param_list.keys(), param)}
+                known_param_["run_id"] = self.__run_index
 
                 # If we cannot interpret some parameters, there is a problem
                 if(len(old_param_list) == len(todo_param_list)):
@@ -321,14 +323,20 @@ class LaunchConfig():
                 if(self.job_id_list is None
                    or self.__run_index in self.job_id_list):
                     self._run_command(command, run_name, known_dependency)
+            # Otherwise, if the command does not exist,
+            # we decrease the run index
+            else:
+                self.__run_index -= 1
 
             # For each subtree (of type "[-> someth]")
             for job_subtree in job_tree[3]:
 
-                # We update the dependencies: if the id is in the list, we add
+                # We update the dependencies: if the id is in the list
+                # (and if the command exists), we add
                 # the job id in the dependencies
-                if(self.job_id_list is None
-                   or self.__run_index in self.job_id_list):
+                if((self.job_id_list is None
+                   or self.__run_index in self.job_id_list)
+                   and command is not None):
                     new_known_dependency = known_dependency+[run_name]
                 else:
                     new_known_dependency = known_dependency
@@ -341,9 +349,10 @@ class LaunchConfig():
                 dependency_1 = sorted(list(set(dependency_1 + dependency_)))
 
             # We add our current run in the (first) dependency list if the job
-            # id is in the list
-            if(self.job_id_list is None
-               or self.__run_index in self.job_id_list):
+            # id is in the list (and if the command exists)
+            if((self.job_id_list is None
+               or self.__run_index in self.job_id_list)
+               and command is not None):
                 dependency_1.append(run_name)
 
         # We create a second (and final) dependency list
@@ -395,24 +404,31 @@ class LocalLaunchConfig(LaunchConfig):
 
 class SlurmLaunchConfig(LaunchConfig):
 
-    def __init__(self, f, job_id_list, config):
+    def __init__(self, f, job_id_list, config, queue, sleep):
         super().__init__(f, job_id_list)
         self.config = config
+        self.queue = queue
+        self.sleep = sleep
+        self.__job_id_dict = {}
 
     def get_job_id(self, run_name):
-        # We execute in the shell a command to get the id of a job given the
-        # job name
-        job_id = subprocess.run(
-            "squeue -n \"{}\" -o \"%A\" 2> /dev/null | tr \"\n\" \" \"".format(
-                run_name), stdout=subprocess.PIPE, universal_newlines=True,
-            shell=True).stdout
-        # We get the job id by stdout
-        job_id = job_id.replace("JOBID ", "")
-        if(job_id != ""):
-            job_id = int(job_id)
-        else:
-            job_id = None
-        return job_id
+        # We get the id of a job in the dict given the job name
+        try:
+            return self.__job_id_dict[run_name]
+        except KeyError:
+            return None
+
+    def set_job_id(self, run_name, job_id):
+        # We get the id of a job in the dict given the job name
+        self.__job_id_dict[run_name] = job_id
+
+    def get_job_queue_size(self):
+        result = subprocess.run("squeue -u $(whoami)",
+            shell=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, universal_newlines=True
+        )
+        job_queue_size = len(result.stdout.split("\n")[1:-1])
+        return job_queue_size
 
     def _run_command(self, command, run_name=None, job_list=None):
 
@@ -426,7 +442,7 @@ class SlurmLaunchConfig(LaunchConfig):
 
         # We get all the job id on which our job depends
         if(len(job_list) > 0):
-            dependency = "--dependency=afterok:"
+            dependency = "--dependency=afterany:"
         else:
             dependency = ""
         for job_id in job_list:
@@ -458,11 +474,121 @@ class SlurmLaunchConfig(LaunchConfig):
                     "There is no configuration file"
                     + f"named {self.config} for slurm")
 
-        # We run the command to run slurm
-        subprocess.call("sbatch {} -J {} {} '{}'".format(
-            dependency, run_name, config_file, command
-        ), shell=True)
+        # We put a job in the queue only if we have not reached the maximum
+        # number of jobs in the queue we have fixed
+        if(self.queue is not None):
+            while(self.get_job_queue_size() >= self.queue):
+                time.sleep(self.sleep)
 
+        # We run the command to run oar
+        result = subprocess.run("sbatch {} -J {} {} '{}'".format(
+            dependency, run_name, config_file, command),
+            shell=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, universal_newlines=True
+        )
+        logging.info("Executing sbatch {} -J {} {} '{}'\n".format(
+            dependency, run_name, config_file, command)
+        )
+        print(result.stdout, end="")
+        print(result.stderr, end="")
+
+        # We get the job id and save it
+        re_match = re.search(r'\d+', result.stdout)
+        if(re_match):
+            job_id = re_match.group(0)
+            self.set_job_id(run_name, int(job_id))
+
+###############################################################################
+
+class OarLaunchConfig(LaunchConfig):
+
+    def __init__(self, f, job_id_list, config, queue, sleep):
+        super().__init__(f, job_id_list)
+        self.config = config
+        self.queue = queue
+        self.sleep = sleep
+        self.__job_id_dict = {}
+
+    def get_job_id(self, run_name):
+        # We get the id of a job in the dict given the job name
+        try:
+            return self.__job_id_dict[run_name]
+        except KeyError:
+            return None
+
+    def set_job_id(self, run_name, job_id):
+        # We get the id of a job in the dict given the job name
+        self.__job_id_dict[run_name] = job_id
+
+    def get_job_queue_size(self):
+        result = subprocess.run("oarstat -u $(whoami)",
+            shell=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, universal_newlines=True
+        )
+        job_queue_size = len(result.stdout.split("\n")[2:-1])
+        return job_queue_size
+
+    def _run_command(self, command, run_name=None, job_list=None):
+
+        # NOTE: we can depend on only one job in OAR ...
+        # So we will always depend on the highest job id in the list ...
+        job_id = None
+        i = len(job_list)-1
+        while i >= 0 and job_id is None:
+            job_id = self.get_job_id(job_list[-1])
+            i -= 1
+        if job_id is not None:
+            dependency = "-a {}".format(job_id)
+        else:
+            dependency = ""
+
+        # We get the default configuration file
+        config_file_list = glob.glob("./run_oar_default*")
+        if(len(config_file_list) == 0):
+            raise RuntimeError(
+                "There is no default configuration file for oar")
+        if(len(config_file_list) > 1):
+            raise RuntimeError(
+                "There is more than one default configuration file for oar")
+        config_file = config_file_list[0]
+
+        # We get the right configuration file
+        if(self.config is not None):
+            config_file = None
+            config_file_list = glob.glob("./run_oar*")
+            for config_file_ in config_file_list:
+                if(config_file_ == f"./run_oar_{self.config}".format()
+                   or (config_file_ == f"./run_oar_default_{self.config}")):
+                    config_file = config_file_
+                    continue
+            if(config_file is None):
+                raise RuntimeError(
+                    "There is no configuration file"
+                    + f"named {self.config} for oar")
+
+        # We put a job in the queue only if we have not attained the maximum
+        # number of jobs in the queue we have fixed
+        if(self.queue is not None):
+            while(self.get_job_queue_size() >= self.queue):
+                time.sleep(self.sleep)
+
+        # We run the command to run oar
+        result = subprocess.run("oarsub {} -n {} -S '{} {}'".format(
+            dependency, run_name, config_file, command),
+            shell=True, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, universal_newlines=True
+        )
+        logging.info("Executing oarsub {} -n {} -S '{} {}'\n".format(
+            dependency, run_name, config_file, command)
+        )
+        print(result.stdout, end="")
+        print(result.stderr, end="")
+
+        # We get the job id and save it
+        re_match = re.search(r'OAR_JOB_ID=(\d+)', result.stdout)
+        if(re_match):
+            job_id = re_match.group(1)
+            self.set_job_id(run_name, int(job_id))
 
 ###############################################################################
 
@@ -478,22 +604,32 @@ if __name__ == "__main__":
 
     arg_parser.add_argument(
         "mode", metavar="mode", type=str,
-        help="The mode of execution (either print, local or slurm)")
+        help="The mode of execution (either print, local, slurm, or oar)")
     arg_parser.add_argument(
         "path", metavar="path", type=str,
         help="The path of the ini file")
     arg_parser.add_argument(
         "--config", metavar="config", default=None, type=str,
-        help="The configuration associated with the mode of execution slurm")
+        help="The configuration associated with the mode slurm or oar")
     arg_parser.add_argument(
         "--job", metavar="job", default=None, type=str,
         help="The job's id or the job_id_list of the jobs to execute")
+    arg_parser.add_argument(
+        "--queue", metavar="queue", default=None, type=int,
+        help="The maximum number of jobs in the queue"
+    )
+    arg_parser.add_argument(
+        "--sleep", metavar="sleep", default=None, type=int,
+        help="The time (sec) before rechecking the number of jobs in the queue"
+    )
 
     arg_list = arg_parser.parse_args()
     mode = arg_list.mode
     path = arg_list.path
     config = arg_list.config
     job = arg_list.job
+    queue = arg_list.queue
+    sleep = arg_list.sleep
 
     # We create the list of job id to execute
     job_id_list = None
@@ -512,7 +648,7 @@ if __name__ == "__main__":
                 range = range.split(":")
                 range = sorted([int(r) for r in range])
             except ValueError:
-                arg_parser.error("--job: it is not job ids")
+                arg_parser.error("--job: these are not valid job ids")
 
             if(len(range) > 2):
                 arg_parser.error(
@@ -526,13 +662,21 @@ if __name__ == "__main__":
         # We sort the list
         job_id_list = sorted(job_id_list)
 
-    if(mode != "print" and mode != "local" and mode != "slurm"):
-        arg_parser.error("mode: it must be either print, local or slurm")
+    if(mode != "print" and mode != "local"
+       and mode != "slurm" and mode != "oar"
+       ):
+        arg_parser.error("mode: it must be either print, local, slurm or oar")
     if(not(os.path.exists(path))):
         arg_parser.error("path: {} does not exist".format(path))
 
     if(config is not None and (mode == "print" or mode == "local")):
-        arg_parser.error("--config: it is only available for the mode slurm")
+        arg_parser.error("--config: it is only available for slurm or oar")
+    if(queue is not None and (mode == "print" or mode == "local")):
+        arg_parser.error("--queue: it is only available for slurm or oar")
+    if(sleep is not None and (mode == "print" or mode == "local")):
+        arg_parser.error("--sleep: it is only available for slurm or oar")
+    if(sleep is None and (mode != "print" and mode != "local")):
+        sleep = 60
 
     # ----------------------------------------------------------------------- #
 
@@ -541,4 +685,6 @@ if __name__ == "__main__":
     elif(mode == "local"):
         LocalLaunchConfig(path, job_id_list).run()
     elif(mode == "slurm"):
-        SlurmLaunchConfig(path, job_id_list, config).run()
+        SlurmLaunchConfig(path, job_id_list, config, queue, sleep).run()
+    elif(mode == "oar"):
+        OarLaunchConfig(path, job_id_list, config, queue, sleep).run()

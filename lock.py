@@ -1,4 +1,4 @@
-# Copyright © 2023 Paul Viallard <paul.viallard@gmail.com>
+# Copyright © 2025 Paul Viallard <paul.viallard@gmail.com>
 # This work is free. You can redistribute it and/or modify it under the
 # terms of the Do What The Fuck You Want To Public License, Version 2,
 # as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
@@ -37,10 +37,10 @@ class Lock():
                 self._release_lock()
                 raise e
 
-        # We initialize two flag to know if the saving was a success
+        # We initialize two flags to know if the saving was a success
         ok_release = False
 
-        # If the saving was not a success,
+        # If the saving was not successful,
         while(not(ok_release)):
 
             # We get the lock
@@ -64,7 +64,7 @@ class Lock():
         # original file
         ok_release = self._rename_lock()
 
-        # If one of the two operations fail, we remove the lock
+        # If one of the two operations fails, we remove the lock
         if(not(ok_release)):
             self._clean_lock()
 
@@ -91,11 +91,11 @@ class Lock():
             except OSError:
                 # If we can't rename the original file, we wait
                 time.sleep(0.1)
-                # If we do not found the lock file, we keep lock flag to False
+                # If we do not find the lock file, we keep lock flag to False
                 self.__got_lock = False
 
     def _clean_lock(self):
-        # If there is the current lock file and the orginal file,
+        # If there is the current lock file and the original file,
         if(os.path.exists(self._lock_file)
            and os.path.exists(self.__path_file)):
             # We remove the current lock file
@@ -124,7 +124,7 @@ class Lock():
             self.__got_lock = False
 
         else:
-            # We have not the lock, everything is fine!
+            # We do not have the lock, everything is fine!
             ok = True
 
         # We return if the renaming was a success
