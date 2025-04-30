@@ -259,7 +259,10 @@ class Writer(Lock):
         return squeeze_data_dict
 
     def __dict_size(self, dict):
-        return len(dict[list(dict.keys())[0]])
+        dict_size = 0
+        if(len(dict) > 0):
+            dict_size = len(dict[list(dict.keys())[0]])
+        return dict_size
 
     # ----------------------------------------------------------------------- #
 
@@ -489,9 +492,7 @@ class Writer(Lock):
     def __filter_(self, path_dict, data_dict):
 
         # We get the size in the dict
-        filter_size = 0
-        if(len(path_dict) > 0):
-            filter_size = len(path_dict[list(path_dict.keys())[0]])
+        filter_size = self.__dict_size(path_dict)
 
         # For each dataset that we want to remove
         for i in range(filter_size):
