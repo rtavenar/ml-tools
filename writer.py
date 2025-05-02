@@ -367,7 +367,7 @@ class Writer(Lock):
             name = group.name.split("/")[-1]
             if(self.__filter_data(name, path_dict, filter_data)):
                 if(not(info)):
-                    get_dict[name] = [group[()]]
+                    get_dict[name] = [np.copy(group[()])]
                 else:
                     get_dict[name] = [(group.shape, group.dtype)]
 
