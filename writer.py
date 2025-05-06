@@ -282,11 +282,14 @@ class Writer(Lock):
 
     # ----------------------------------------------------------------------- #
 
-    def get_pandas(self, filter_data=None, filter_path=None):
-
+    def get_pandas(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None
+    ):
         # We get the path_dict and the data_dict
         path_dict, data_dict = self.do(
-            self.__get, filter_data=filter_data, filter_path=filter_path,
+            self.__get, data_list=data_list, path_dict=path_dict,
+            filter_data=filter_data, filter_path=filter_path,
             all=True)
 
         # We transform it in the pandas dataframe
@@ -296,10 +299,14 @@ class Writer(Lock):
 
         return data
 
-    def get_numpy(self, filter_data=None, filter_path=None):
+    def get_numpy(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None
+    ):
 
         # We get the pandas dataframe
         data = self.get_pandas(
+            data_list=data_list, path_dict=path_dict,
             filter_data=filter_data, filter_path=filter_path)
         # We transform into the numpy ndarray
         data = data.to_numpy()
@@ -307,12 +314,14 @@ class Writer(Lock):
         return data
 
     def get(
-        self, filter_data=None, filter_path=None,
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None,
         info=False, all=False, squeeze=True
     ):
 
         get_dict = self.do(
-            self.__get, filter_data=filter_data, filter_path=filter_path,
+            self.__get, data_list=data_list, path_dict=path_dict,
+            filter_data=filter_data, filter_path=filter_path,
             info=info, all=all)
 
         if(not(all)):
@@ -329,10 +338,27 @@ class Writer(Lock):
             return path_dict, data_dict
 
 
-    def __get(self, filter_data=None, filter_path=None, info=False, all=False):
+    def __get(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None, info=False, all=False):
 
         # We load the data
         self._load()
+
+        # If we have a list of datasets and a path dict, this is a special case
+        # and we can construct the filter
+        if(data_list is not None and path_dict is not None):
+
+            def filter_data_list_path_dict(data, **kwargs):
+                for key in path_dict.keys():
+                    if(key not in kwargs or kwargs[key] != path_dict[key]):
+                        return False
+                if(data not in data_list):
+                    return False
+                return True
+
+            filter_data = filter_data_list_path_dict
+            filter_path = None
 
         # We return the get
         get_dict = self.__get_(
@@ -445,14 +471,36 @@ class Writer(Lock):
 
     # ----------------------------------------------------------------------- #
 
-    def filter(self, filter_data=None, filter_path=None):
+    def filter(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None
+    ):
         return self.do(
-            self.__filter, filter_data=filter_data, filter_path=filter_path)
+            self.__filter, data_list=data_list, path_dict=path_dict,
+            filter_data=filter_data, filter_path=filter_path)
 
-    def __filter(self, filter_data=None, filter_path=None):
+    def __filter(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None,
+    ):
 
         # We load the data
         self._load()
+
+        # If we have a list of datasets and a path dict, this is a special case
+        # and we can construct the filter
+        if(data_list is not None and path_dict is not None):
+
+            def filter_data_list_path_dict(data, **kwargs):
+                for key in path_dict.keys():
+                    if(key not in kwargs or kwargs[key] != path_dict[key]):
+                        return True
+                if(data not in data_list):
+                    return True
+                return False
+
+            filter_data = filter_data_list_path_dict
+            filter_path = None
 
         # We define the negation of the filters
         def neq_filter_data(*args, **kwargs):
@@ -527,16 +575,24 @@ class Writer(Lock):
 
     def __str__(self):
 
+        def filter_data(data, **kwargs):
+            return True
+
         path_dict, data_dict = self.do(
-            self.__show, filter_data=None, filter_path=None)
+            self.__show, filter_data=filter_data, filter_path=None)
 
         # We get the string that we need to show
         string = self.__show_(path_dict, data_dict, "")
         return string
 
-    def show(self, filter_data=None, filter_path=None, to_print=True):
+
+    def show(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None, to_print=True
+    ):
         path_dict, data_dict = self.do(
-            self.__show, filter_data=filter_data, filter_path=filter_path)
+            self.__show, data_list=data_list, path_dict=path_dict,
+            filter_data=filter_data, filter_path=filter_path)
 
         # We get the string that we need to show
         string = self.__show_(path_dict, data_dict, "")
@@ -548,10 +604,28 @@ class Writer(Lock):
             return string
 
 
-    def __show(self, filter_data=None, filter_path=None):
+    def __show(
+        self, data_list=None, path_dict=None,
+        filter_data=None, filter_path=None
+    ):
 
         # We load the data
         self._load()
+
+        # If we have a list of datasets and a path dict, this is a special case
+        # and we can construct the filter
+        if(data_list is not None and path_dict is not None):
+
+            def filter_data_list_path_dict(data, **kwargs):
+                for key in path_dict.keys():
+                    if(key not in kwargs or kwargs[key] != path_dict[key]):
+                        return False
+                if(data not in data_list):
+                    return False
+                return True
+
+            filter_data = filter_data_list_path_dict
+            filter_path = None
 
         # We return the get with the information and not the datasets
         get_dict = self.__get_(
