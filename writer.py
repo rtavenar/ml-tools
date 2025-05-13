@@ -202,7 +202,7 @@ class Writer(Lock):
         for key_val in path_name.split("/"):
             # For each value, we split it again to obtain the "key" and "val"
             # from "key=val"
-            key_val = re.split("[=,]", key_val)
+            key_val = re.split("=", key_val)
 
             # If we have "key=val"
             if(len(key_val) == 2):
