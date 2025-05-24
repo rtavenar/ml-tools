@@ -40,7 +40,7 @@ class LaunchConfig():
         # 3- "Data" of the job (i.e., hyperparameters, variables, command)
         # 4- Sub-tree containing the jobs that need to be run for every set of
         # hyperparameters
-        # 5- Sub-tree containing the jobs that need to be run after the the
+        # 5- Sub-tree containing the jobs that need to be run after the
         # previous sub-tree
         job_tuple = (None, None, None, [], [])
         self.job_tree = job_tuple
@@ -261,7 +261,7 @@ class LaunchConfig():
         param_list, todo_param_list = self._get_param_list(
             param_list, known_param)
 
-        # We initalize a list of run dependencies
+        # We initialize a list of run dependencies
         known_dependency = sorted(list(set(known_dependency)))
         dependency_1 = list(known_dependency)
 
