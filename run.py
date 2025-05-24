@@ -123,10 +123,6 @@ class LaunchConfig():
             if(re.match("[$]{[^}]+}", key)):
                 del param_list[key]
 
-        # We create the python variable to use parameters the ini file
-        for param_name in known_param:
-            exec(param_name+" = known_param['"+param_name+"']")
-
         # We create a todo list (see below)
         todo_param_list = {}
 
@@ -135,8 +131,11 @@ class LaunchConfig():
 
             try:
                 # We interpret the param
+                known_param_ = dict(known_param)
+                known_param_.update({"param_list": param_list})
                 exec("param_list['" + param_name + "'] = "
-                     + param_list[param_name])
+                     + param_list[param_name], globals(), known_param_)
+
             except NameError:
                 # If we cannot interpret the param, we add the param in the
                 # todo list
@@ -640,24 +639,24 @@ if __name__ == "__main__":
         job_id_list = []
 
         # For each id range/id
-        range_list = job.split(",")
-        for range in range_list:
+        job_range_list = job.split(",")
+        for job_range in job_range_list:
 
             # We get the ids in the "range"
             try:
-                range = range.split(":")
-                range = sorted([int(r) for r in range])
+                job_range = job_range.split(":")
+                job_range = sorted([int(r) for r in job_range])
             except ValueError:
                 arg_parser.error("--job: these are not valid job ids")
 
-            if(len(range) > 2):
+            if(len(job_range) > 2):
                 arg_parser.error(
                     "--job: a range must contain 2 values only")
 
             # We add all the ids in the list
-            if(len(range) == 2):
-                range = np.arange(range[0], range[1]+1).tolist()
-            job_id_list = job_id_list+range
+            if(len(job_range) == 2):
+                job_range = list(range(job_range[0], job_range[1]+1))
+            job_id_list = job_id_list+job_range
 
         # We sort the list
         job_id_list = sorted(job_id_list)
