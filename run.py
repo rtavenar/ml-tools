@@ -42,7 +42,8 @@ class LaunchConfig():
         # hyperparameters
         # 5- Sub-tree containing the jobs that need to be run after the
         # previous sub-tree
-        job_tuple = (None, None, None, [], [])
+        # 6- Flag to run sequentially the jobs of a node
+        job_tuple = [None, None, None, [], [], False]
         self.job_tree = job_tuple
 
         # We initialize a dict to insert easily in the tree
@@ -56,56 +57,78 @@ class LaunchConfig():
 
             # We remove the space in the sections of the ini file
             job_name_list = job_name.replace(" ", "")
-            job_name_list = re.split("(-(?:-|>))", job_name_list)
+            job_name_list = re.split(r'\s*(\|?->)\s*', job_name_list)
 
             # If the section can be rewritten as "[someth]"
             if(len(job_name_list) == 1):
 
                 # We initialize the node of the tree with its "data"
-                job_tuple = (job_name_list[0], prog_previous,
-                             config[job_name], [], [])
+                job_tuple = [job_name_list[0], prog_previous,
+                             config[job_name], [], [], False]
+
+                # We check if we need to run sequentially the jobs
+                # and update the flag
+                if re.match(r'^!', job_name_list[0]):
+                    job_tuple[5] = True
 
                 # We insert the new node in the dict
                 job_dict[job_name_list[0]] = job_tuple
                 # We insert the new node in the parent node
                 job_dict[prog_previous][3].append(job_tuple)
+
                 # We keep this node
                 prog_previous = job_name_list[0]
 
             elif(len(job_name_list) == 3):
 
-                # If the section can be rewriten as "[-> someth]"
+                # If the section can be rewriten as "[-> sth]"
                 if(job_name_list[0] == ""):
                     # We initialize the node of the tree with its "data"
-                    job_tuple = (job_name_list[2], prog_previous,
-                                 config[job_name], [], [])
+                    job_tuple = [job_name_list[2], prog_previous,
+                                 config[job_name], [], [], False]
+
+                    # We check if we need to run sequentially the jobs
+                    # and update the flag
+                    if re.match(r'^!', job_name_list[2]):
+                        job_tuple[5] = True
+
                     # We insert the new node in the dict
                     job_dict[job_name_list[2]] = job_tuple
                     # We insert the new node in the parent node
                     job_dict[prog_previous][3].append(job_tuple)
 
-                # If the section can be rewriten as "[someth1 -> someth2]"
-                elif(job_name_list[1] == "->"):
+                # If the section can be rewriten as "[sth1 |-> sth2]"
+                elif(job_name_list[1] == "|->"):
                     # We initialize the node of the tree with its "data"
-                    job_tuple = (job_name_list[2], job_name_list[0],
-                                 config[job_name], [], [])
+                    job_tuple = [job_name_list[2], job_name_list[0],
+                                 config[job_name], [], [], False]
+
+                    # We check if we need to run sequentially the jobs
+                    # and update the flag
+                    if re.match(r'^!', job_name_list[2]):
+                        job_tuple[5] = True
+
                     # We insert the new node in the dict
                     job_dict[job_name_list[2]] = job_tuple
                     # We insert the new node in the node indicated by "someth1"
                     job_dict[job_name_list[0]][4].append(job_tuple)
 
-                # If the section can be rewriten as "[someth1 -- someth2]"
-                elif(job_name_list[1] == "--"):
-                    # We get the parent of the node "someth1"
-                    job_parent = job_dict[job_name_list[0]][1]
+                # If the section can be rewriten as "[sth1 -> sth2]"
+                elif(job_name_list[1] == "->"):
                     # We initialize the node of the tree with its "data"
-                    job_tuple = (job_name_list[2], job_parent,
-                                 config[job_name], [], [])
+                    job_tuple = [job_name_list[2], job_name_list[0],
+                                 config[job_name], [], [], False]
+
+                    # We check if we need to run sequentially the jobs
+                    # and update the flag
+                    if re.match(r'^!', job_name_list[2]):
+                        job_tuple[5] = True
+
                     # We insert the new node in the dict
                     job_dict[job_name_list[2]] = job_tuple
                     # We insert the new node in the parent node that is
-                    # associated to "someth1"
-                    job_dict[job_parent][3].append(job_tuple)
+                    # associated to "sth1"
+                    job_dict[job_name_list[0]][3].append(job_tuple)
 
                 # We keep this node
                 prog_previous = job_name_list[2]
@@ -244,7 +267,7 @@ class LaunchConfig():
         return command
 
     def run(self):
-        # We initialize a run index (useful for slurm ...)
+        # We initialize a run index (useful for slurm, oar ...)
         self.__run_index = 0
         # We run the jobs of the subtrees
         for prog_subtree in self.job_tree[3]:
@@ -262,7 +285,9 @@ class LaunchConfig():
             param_list, known_param)
 
         # We initialize a list of run dependencies
-        known_dependency = sorted(list(set(known_dependency)))
+        known_dependency = sorted(
+            list(set(known_dependency)),
+            key=lambda x: int(x.split('_')[-1]))
         dependency_1 = list(known_dependency)
 
         # For each combination of params
@@ -322,12 +347,13 @@ class LaunchConfig():
                 if(self.job_id_list is None
                    or self.__run_index in self.job_id_list):
                     self._run_command(command, run_name, known_dependency)
+
             # Otherwise, if the command does not exist,
             # we decrease the run index
             else:
                 self.__run_index -= 1
 
-            # For each subtree (of type "[-> someth]")
+            # For each subtree (of type "[-> sth]" or "[sth1 -> sth2]")
             for job_subtree in job_tree[3]:
 
                 # We update the dependencies: if the id is in the list
@@ -344,8 +370,11 @@ class LaunchConfig():
                 dependency_ = self._run(
                     job_subtree, job_subtree[2], param_,
                     var_, new_known_dependency)
+
                 # We add the new dependencies in the list
-                dependency_1 = sorted(list(set(dependency_1 + dependency_)))
+                dependency_1 = sorted(
+                    list(set(dependency_1 + dependency_)),
+                    key=lambda x: int(x.split('_')[-1]))
 
             # We add our current run in the (first) dependency list if the job
             # id is in the list (and if the command exists)
@@ -353,17 +382,27 @@ class LaunchConfig():
                or self.__run_index in self.job_id_list)
                and command is not None):
                 dependency_1.append(run_name)
+                dependency_1 = sorted(
+                    list(set(dependency_1)),
+                    key=lambda x: int(x.split('_')[-1]))
+
+            # If we are in sequential mode, then, we need to update
+            # the known dependency and run sequentially the jobs inside a node
+            if(job_tree[5] is True):
+                known_dependency = dependency_1
 
         # We create a second (and final) dependency list
         dependency_2 = list(dependency_1)
 
-        # For each subtree (of type "[someth1 -> someth2]")
+        # For each subtree (of type "[sth1 |-> sth2]")
         for job_subtree in job_tree[4]:
             # We run recursively the subtree (and we get the dependency)
             dependency_ = self._run(
                 job_subtree, job_subtree[2], {}, {}, dependency_1)
             # We add the new dependencies in the list
-            dependency_2 = sorted(list(set(dependency_2 + dependency_)))
+            dependency_2 = sorted(
+                list(set(dependency_2 + dependency_)),
+                key=lambda x: int(x.split('_')[-1]))
 
         # We return the dependencies of the node
         return dependency_2
