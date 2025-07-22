@@ -202,7 +202,7 @@ class Writer(Lock):
         for key_val in path_name.split("/"):
             # For each value, we split it again to obtain the "key" and "val"
             # from "key=val"
-            key_val = re.split("=", key_val)
+            key_val = re.split("[=,]", key_val)
 
             # If we have "key=val"
             if(len(key_val) == 2):
@@ -227,15 +227,10 @@ class Writer(Lock):
         data_dict = {}
         path_dict = {}
         for key in get_dict:
-            for e in get_dict[key]:
-                if(e is not None
-                   and (isinstance(e, tuple) or isinstance(e, np.ndarray))
-                ):
-                    data_dict[key] = get_dict[key]
-                    break
-                if(e is not None and isinstance(e, str)):
-                    path_dict[key] = get_dict[key]
-                    break
+            if key.endswith("_data"):
+                data_dict[key[:-5]] = get_dict[key]
+            elif key.endswith("_path"):
+                path_dict[key[:-5]] = get_dict[key]
         return path_dict, data_dict
 
     def __data_dict_to_squeeze_data_dict(self, data_dict):
@@ -393,9 +388,9 @@ class Writer(Lock):
             name = group.name.split("/")[-1]
             if(self.__filter_data(name, path_dict, filter_data)):
                 if(not(info)):
-                    get_dict[name] = [np.copy(group[()])]
+                    get_dict[name+"_data"] = [np.copy(group[()])]
                 else:
-                    get_dict[name] = [(group.shape, group.dtype)]
+                    get_dict[name+"_data"] = [(group.shape, group.dtype)]
 
         # If we have a group, we aim to merge all the datasets and subgroup
         # in the dict
@@ -417,7 +412,7 @@ class Writer(Lock):
                         # the path and the datasets
                         if(len(get_dict) == 0):
                             for key in path_dict.keys():
-                                get_dict[key] = [path_dict[key]]
+                                get_dict[key+"_path"] = [path_dict[key]]
                         for key in get_dict_.keys():
                             get_dict[key] = get_dict_[key]
 
@@ -426,13 +421,12 @@ class Writer(Lock):
                     elif(filter_data is None):
                         if(len(get_dict) == 0):
                             for key in path_dict.keys():
-                                get_dict[key] = [path_dict[key]]
+                                get_dict[key+"_path"] = [path_dict[key]]
 
 
             # Now, that we have the datasets of this level, we can get (and
             # merge) with the subgroups
             for child_name, child in group.items():
-
 
                 if(isinstance(child, h5py.Group)):
                     get_dict_ = self.__get_(
