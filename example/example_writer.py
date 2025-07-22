@@ -19,7 +19,7 @@ def filter_path_fun(key1=None, key2=None, **kwargs):
     return True
 
 def filter_data_del_fun(data, key1=None, key2=None, **kwargs):
-    if(data in ["col1", "col2"]):
+    if(data in ["col1", "col2", "key1"]):
         return True
     return False
 
@@ -31,7 +31,7 @@ data = Writer("test.h5")
 
 # We set the data in the hdf5 file
 data.set(
-    {"col1": 0.0123, "col2": [[0.1]]}, {"key1": "val1", "key2": "val2"},
+    {"key1": "bouh", "col1": 0.0123, "col2": [[0.1]]}, {"key1": "val1", "key2": "val2"},
 mode="a")
 data.set(
     {"col1": 0.19, "col2": [[0.81]]}, {"key1": "val1", "key2": "val3"},
