@@ -1,4 +1,4 @@
-# Copyright © 2025 Paul Viallard <paul.viallard@gmail.com>
+# Copyright © 2025 Paul Viallard <paul.viallard@gmail.com> and Hind Atbir <hatbir.p@gmail.com>
 # This work is free. You can redistribute it and/or modify it under the
 # terms of the Do What The Fuck You Want To Public License, Version 2,
 # as published by Sam Hocevar. See http://www.wtfpl.net/ for more details.
@@ -6,126 +6,63 @@
 import os
 import time
 import uuid
-import glob
+import stat
 
 ###############################################################################
-
 
 class Lock():
 
     def __init__(self, file_):
-        # We create an id to lock the file
-        self.__lock_id = str(uuid.uuid4())
-        self.__lock_id = self.__lock_id.replace("-", "")
-
         # We save the path associated with the data
-        self.__path_file = str(file_)
-        self._lock_file = self.__path_file+".lock."+self.__lock_id
+        self._path_file = os.path.abspath(file_)
+        self._lock_file = self._path_file+".lock"
         # We initialize the flag to know if we got the lock
         self.__got_lock = False
 
     # ----------------------------------------------------------------------- #
-    # Lock
 
     def do(self, function, *args, **kwargs):
 
-        # If we got the lock, we run the function and return the result
-        if(self.__got_lock):
-            try:
-                return function(*args, **kwargs)
-            except Exception as e:
-                self._release_lock()
-                raise e
-
-        # We initialize two flags to know if the saving was a success
-        ok_release = False
-
-        # If the saving was not successful,
-        while(not(ok_release)):
-
+        # While we do not have the lock,
+        while(not self.__got_lock):
             # We get the lock
             self._get_lock()
-            # We run the function and keep the result
-            try:
-                result = function(*args, **kwargs)
-            except Exception as e:
-                self._release_lock()
-                raise e
-            # We try to release the lock and save the result
-            # (and start over if there is a problem)
-            ok_release = self._release_lock()
-
-        # We return the result
-        return result
-
-    def _release_lock(self):
-
-        # If the saving was a success, we rename the lock file as the
-        # original file
-        ok_release = self._rename_lock()
-
-        # If one of the two operations fails, we remove the lock
-        if(not(ok_release)):
-            self._clean_lock()
-
-        # We return the state of the two operations
-        return ok_release
+            if self.__got_lock:
+                # If we have the lock, we run the function and release the lock
+                try:
+                    result = function(*args, **kwargs)
+                finally:
+                    self._release_lock()
+                return result
+            else:
+                # If we couldn't get the lock, we wait (a bit)
+                time.sleep(0.1)
 
     def _get_lock(self):
 
-        # If the file does not exist, we create it
-        if(not(os.path.exists(self.__path_file))
-           and len(glob.glob(self.__path_file+".lock.*")) == 0):
-            tmp_f = open(self.__path_file, 'a+')
-            tmp_f.close()
+        # We create the file if it does not exist
+        try:
+            fd = os.open(self._path_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(fd)
+        except FileExistsError:
+            pass
 
-        # Until we get the lock
-        while not(self.__got_lock):
-            try:
-                # We try to get it by renaming the original file by the lock
-                # file ".lock.id"
-                os.replace(
-                    self.__path_file,
-                    self._lock_file)
-                self.__got_lock = True
-            except OSError:
-                # If we can't rename the original file, we wait
-                time.sleep(0.1)
-                # If we do not find the lock file, we keep lock flag to False
-                self.__got_lock = False
-
-    def _clean_lock(self):
-        # If there is the current lock file and the original file,
-        if(os.path.exists(self._lock_file)
-           and os.path.exists(self.__path_file)):
-            # We remove the current lock file
-            os.remove(self._lock_file)
-
-    def _rename_lock(self):
-        # If we got the lock
-        if(self.__got_lock):
-
-            # If there is the current lock file and the orginal file,
-            if(os.path.exists(self._lock_file)
-               and os.path.exists(self.__path_file)):
-                # The lock has a problem
-                ok = False
-            else:
-                # We try to rename the lock file as the original file
-                try:
-                    os.replace(
-                        self._lock_file,
-                        self.__path_file)
-                    ok = True
-                except OSError:
-                    ok = False
-
-            # We set the lock flag accordingly
+        # We now assume that the file exists. We try to get the lock by
+        # creating an additional hard link (named with a .lock)
+        try:
+            os.link(self._path_file, self._lock_file)
+            self.__got_lock = True
+        except FileExistsError:
             self.__got_lock = False
+            return
 
-        else:
-            # We do not have the lock, everything is fine!
-            ok = True
+    def _release_lock(self):
 
-        # We return if the renaming was a success
-        return ok
+        # If we got the lock, we just remove the .lock file, i.e., one link
+        if self.__got_lock:
+            try:
+                os.unlink(self._lock_file)
+            except FileNotFoundError:
+                pass
+            finally:
+                self.__got_lock = False
