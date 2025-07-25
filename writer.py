@@ -327,8 +327,6 @@ class Writer(Lock):
         else:
             path_dict, data_dict = get_dict
             if(squeeze):
-                path_name_list = self.__path_dict_to_path_name_list(path_dict)
-                path_dict = path_name_list
                 data_dict = self.__data_dict_to_squeeze_data_dict(data_dict)
             return path_dict, data_dict
 
