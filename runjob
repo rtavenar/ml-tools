@@ -1,0 +1,5 @@
+#!/bin/bash
+
+export MLTOOLS_PATH="$(cd "$(dirname "$(command -v "$0" || which "$0")")" && pwd)"
+
+python "${MLTOOLS_PATH}"/run.py "$@"

@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#OAR -q abaca
+#OAR -l {memcore>20000}/core=1,walltime=72:00:00
+#OAR --stdout output/%jobname%.out
+#OAR --stderr output/%jobname%.out
+
+echo $@
+source ~/.bashrc
+
+conda activate py3.10_ml
+export CUDA_VISIBLE_DEVICES=
+export PYTHONUNBUFFERED=1
+eval $@

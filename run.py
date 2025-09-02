@@ -489,7 +489,8 @@ class SlurmLaunchConfig(LaunchConfig):
         dependency = dependency[:-1]
 
         # We get the default configuration file
-        config_file_list = glob.glob("./run_slurm_default*")
+        config_dir = os.environ.get("MLTOOLS_PATH", ".")
+        config_file_list = glob.glob(os.path.join(config_dir, "run_slurm_default*"))
         if(len(config_file_list) == 0):
             raise RuntimeError(
                 "There is no default configuration file for slurm")
@@ -501,10 +502,10 @@ class SlurmLaunchConfig(LaunchConfig):
         # We get the right configuration file
         if(self.config is not None):
             config_file = None
-            config_file_list = glob.glob("./run_slurm*")
+            config_file_list = glob.glob(os.path.join(config_dir, "run_slurm*"))
             for config_file_ in config_file_list:
-                if(config_file_ == f"./run_slurm_{self.config}".format()
-                   or (config_file_ == f"./run_slurm_default_{self.config}")):
+                if(config_file_ == os.path.join(config_dir, f"run_slurm_{self.config}")
+                   or (config_file_ == os.path.join(config_dir, f"run_slurm_default_{self.config}"))):
                     config_file = config_file_
                     continue
             if(config_file is None):
@@ -581,7 +582,8 @@ class OarLaunchConfig(LaunchConfig):
             dependency = ""
 
         # We get the default configuration file
-        config_file_list = glob.glob("./run_oar_default*")
+        config_dir = os.environ.get("MLTOOLS_PATH", ".")
+        config_file_list = glob.glob(os.path.join(config_dir, "run_oar_default*"))
         if(len(config_file_list) == 0):
             raise RuntimeError(
                 "There is no default configuration file for oar")
@@ -593,10 +595,10 @@ class OarLaunchConfig(LaunchConfig):
         # We get the right configuration file
         if(self.config is not None):
             config_file = None
-            config_file_list = glob.glob("./run_oar*")
+            config_file_list = glob.glob(os.path.join(config_dir, "run_oar*"))
             for config_file_ in config_file_list:
-                if(config_file_ == f"./run_oar_{self.config}".format()
-                   or (config_file_ == f"./run_oar_default_{self.config}")):
+                if(config_file_ == os.path.join(config_dir, f"run_oar_{self.config}")
+                   or (config_file_ == os.path.join(config_dir, f"run_oar_default_{self.config}"))):
                     config_file = config_file_
                     continue
             if(config_file is None):
